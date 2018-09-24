@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 import socket
 import sys
+import json
 
 from argparse import ArgumentParser, SUPPRESS
 from datetime import datetime
@@ -13,7 +14,6 @@ try:
 except ImportError:
     print('Required module does not exist. Install: pip install pyopenssl')
     sys.exit(1)
-
 
 class Clr:
     """Text colors."""
@@ -88,9 +88,9 @@ def analyze_ssl(host, context):
     return context
 
 def get_cert_sans(x509cert):
-    ''' 
-    Get Subject Alt Names from Certificate. Shameless taken from stack overflow: 
-    https://stackoverflow.com/users/4547691/anatolii-chmykhalo 
+    '''
+    Get Subject Alt Names from Certificate. Shameless taken from stack overflow:
+    https://stackoverflow.com/users/4547691/anatolii-chmykhalo
     '''
 
     san = ''
@@ -134,79 +134,117 @@ def get_cert_info(host, cert):
 
     # Validity days
     context['validity_days'] = (valid_till - valid_from).days
+    
+    return context
+
+def get_nr_cert_info(host, cert):
+    """Get all the information about cert and create a New Relic JSON file."""
+    context = {}
+
+    cert_subject = cert.get_subject()
+
+    context['eventType'] = "SslCert"
+    context['issued_to'] = cert_subject.CN
+    context['issued_o'] = cert_subject.O
+    context['issuer_c'] = cert.get_issuer().countryName
+    context['issuer_o'] = cert.get_issuer().organizationName
+    #context['issuer_ou'] = cert.get_issuer().organizationalUnitName
+    #context['issuer_cn'] = cert.get_issuer().commonName
+    #context['cert_sn'] = cert.get_serial_number()
+    #context['cert_sha1'] = cert.digest("sha1")
+    context['cert_alg'] = cert.get_signature_algorithm().decode()
+    context['cert_ver'] = cert.get_version()
+    context['cert_sans'] = get_cert_sans(cert)
+    context['cert_exp'] = cert.has_expired()
+
+    # Valid from
+    valid_from = datetime.strptime(cert.get_notBefore().decode('ascii'),
+                                   '%Y%m%d%H%M%SZ')
+    context['valid_from'] = valid_from.strftime('%Y-%m-%d')
+
+    # Valid till
+    valid_till = datetime.strptime(cert.get_notAfter().decode('ascii'),
+                                   '%Y%m%d%H%M%SZ')
+    context['valid_till'] = valid_till.strftime('%Y-%m-%d')
+
+    # Count number of days left
+    context['days_left'] = (valid_till - datetime.now()).days
 
     return context
 
-
 def print_status(host, context, analyze=False):
     """Print all the usefull info about host."""
-    days_left = (datetime.strptime(context[host]['valid_till'], '%Y-%m-%d') - datetime.now()).days
+    days_left = (datetime.strptime(context['valid_till'], '%Y-%m-%d') - datetime.now()).days
 
     print('\t{}[+]{} {}\n'.format(Clr.GREEN, Clr.RST, host))
-    print('\t\tIssued domain: {}'.format(context[host]['issued_to']))
-    print('\t\tIssued to: {}'.format(context[host]['issued_o']))
-    print('\t\tIssued by: {} ({})'.format(context[host]['issuer_o'], context[host]['issuer_c']))
-    print('\t\tValid from: {}'.format(context[host]['valid_from']))
-    print('\t\tValid to: {} ({} days left)'.format(context[host]['valid_till'], days_left))
-    print('\t\tValidity days: {}'.format(context[host]['validity_days']))
-    print('\t\tCertificate S/N: {}'.format(context[host]['cert_sn']))
-    print('\t\tCertificate SHA1 FP: {}'.format(context[host]['cert_sha1']))
-    print('\t\tCertificate version: {}'.format(context[host]['cert_ver']))
-    print('\t\tCertificate algorithm: {}'.format(context[host]['cert_alg']))
+    print('\t\tIssued domain: {}'.format(context['issued_to']))
+    print('\t\tIssued to: {}'.format(context['issued_o']))
+    print('\t\tIssued by: {} ({})'.format(context['issuer_o'], context['issuer_c']))
+    print('\t\tValid from: {}'.format(context['valid_from']))
+    print('\t\tValid to: {} ({} days left)'.format(context['valid_till'], days_left))
+    print('\t\tValidity days: {}'.format(context['validity_days']))
+    print('\t\tCertificate S/N: {}'.format(context['cert_sn']))
+    print('\t\tCertificate SHA1 FP: {}'.format(context['cert_sha1']))
+    print('\t\tCertificate version: {}'.format(context['cert_ver']))
+    print('\t\tCertificate algorithm: {}'.format(context['cert_alg']))
 
     if analyze:
-        print('\t\tCertificate grade: {}'.format(context[host]['grade']))
-        print('\t\tPoodle vulnerability: {}'.format(context[host]['poodle_vuln']))
-        print('\t\tHeartbleed vulnerability: {}'.format(context[host]['heartbleed_vuln']))
-        print('\t\tHeartbeat vulnerability: {}'.format(context[host]['heartbeat_vuln']))
-        print('\t\tFreak vulnerability: {}'.format(context[host]['freak_vuln']))
-        print('\t\tLogjam vulnerability: {}'.format(context[host]['logjam_vuln']))
-        print('\t\tDrown vulnerability: {}'.format(context[host]['drownVulnerable']))
+        print('\t\tCertificate grade: {}'.format(context['grade']))
+        print('\t\tPoodle vulnerability: {}'.format(context['poodle_vuln']))
+        print('\t\tHeartbleed vulnerability: {}'.format(context['heartbleed_vuln']))
+        print('\t\tHeartbeat vulnerability: {}'.format(context['heartbeat_vuln']))
+        print('\t\tFreak vulnerability: {}'.format(context['freak_vuln']))
+        print('\t\tLogjam vulnerability: {}'.format(context['logjam_vuln']))
+        print('\t\tDrown vulnerability: {}'.format(context['drownVulnerable']))
 
-    print('\t\tExpired: {}'.format(context[host]['cert_exp']))
+    print('\t\tExpired: {}'.format(context['cert_exp']))
     print('\t\tCertificate SANs: ')
-    for san in context[host]['cert_sans'].split(';'): print('\t\t\t{}'.format(san))
+    for san in context['cert_sans'].split(';'): print('\t\t\t{}'.format(san))
 
 
 
 def show_result(user_args):
     """Get the context."""
-    context = {}
+    context = []
     failed_cnt = 0
     hosts = user_args.hosts
 
-    if not user_args.json_true:
+    if not user_args.json_true and not user_args.nr_true:
         border_msg('Analyzing {} host(s)'.format(len(hosts)))
 
-    if not user_args.json_true and user_args.analyze:
+    if not user_args.json_true and not user_args.nr_true and user_args.analyze:
         print('{}Warning: -a/--analyze is enabled. It takes more time...{}\n'.format(Clr.YELLOW, Clr.RST))
 
     for host in hosts:
         host, port = filter_hostname(host)
 
         # Check duplication
-        if host in context.keys():
-            continue
+        #if host in context.keys():
+        #    continue
 
         try:
             cert = get_cert(host, port, user_args)
-            context[host] = get_cert_info(host, cert)
+            if user_args.nr_true:
+                context.append(get_nr_cert_info(host, cert))
+            else:
+                context.append(get_cert_info(host, cert))
 
             # Analyze the certificate if enabled
             if user_args.analyze:
-                context = analyze_ssl(host, context)
+                context.append(analyze_ssl(host, context))
 
-            if not user_args.json_true:
-                print_status(host, context, user_args.analyze)
+            if not user_args.json_true and not user_args.nr_true:
+                for c in context:
+                    print_status(host, c, user_args.analyze)
         except Exception as error:
-            if not user_args.json_true:
+            if not user_args.json_true and not user_args.nr_true:
                 print('\t{}[-]{} {:<20s} Failed: {}\n'.format(Clr.RED, Clr.RST, host, error))
                 failed_cnt += 1
         except KeyboardInterrupt:
             print('{}Canceling script...{}\n'.format(Clr.YELLOW, Clr.RST))
             sys.exit(1)
 
-    if not user_args.json_true:
+    if not user_args.json_true and not user_args.nr_true:
         print('\n{} successful and {} failed\n'.format(len(hosts) - failed_cnt, failed_cnt))
 
     # CSV export if -c/--csv is specified
@@ -214,12 +252,12 @@ def show_result(user_args):
         export_csv(context, user_args.csv_enabled)
 
     # Enable JSON output if -j/--json argument specified
-    if user_args.json_true:
+    if user_args.json_true or user_args.nr_true:
         if user_args.pretty_output:
             from pprint import pprint
             pprint(context)
         else:
-            print(context)
+            print json.dumps(context).replace(": ", ":")
 
 def export_csv(context, filename):
     """ Export all context results to CSV file."""
@@ -260,6 +298,9 @@ def get_args():
     parser.add_argument('-j', '--json', dest='json_true',
                         action='store_true', default=False,
                         help='Enable JSON in the output')
+    parser.add_argument('-n', '--newrelic', dest='nr_true',
+                        action='store_true', default=False,
+                        help='Enable New Relic Insights JSON in the output')
     parser.add_argument('-a', '--analyze', dest='analyze',
                         default=False, action='store_true',
                         help='Enable SSL security analysis on the host')
