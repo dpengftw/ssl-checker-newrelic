@@ -1,1 +1,0 @@
-echo '[{ "eventType": "SslCert", "days_left": 541, "cert_ver": 2}]' | gzip | curl --data-binary @- -X POST -H "Content-Type: application/json" -H "X-Insert-Key: 0RKVk1NLXCZ0ZNZj4W0ID3wwYtwnKNDg" -H "Content-Encoding: gzip" https://insights-collector.newrelic.com/v1/accounts/1348431/events
