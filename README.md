@@ -18,7 +18,7 @@ You only need to installl pyOpenSSL:
 ```
 ./ssl_checker.py -h
 usage: ssl_checker.py [-H [HOSTS [HOSTS ...]] | -f HOST_FILE] [-s HOST:PORT]
-                      [-c FILENAME.CSV] [-j] [-a] [-p] [-h]
+                      [-c FILENAME.CSV] [-n | -j] [-a] [-p] [-h]
 
 Collects useful information about given host's SSL certificates.
 
@@ -31,6 +31,7 @@ optional arguments:
                         Enable SOCKS proxy for connection
   -c FILENAME.CSV, --csv FILENAME.CSV
                         Enable CSV file export
+  -n, --newrelic		Enable New Relic Insights output
   -j, --json            Enable JSON in the output
   -a, --analyze         Enable SSL security analysis on the host
   -p, --pretty          Print pretty and more human readable Json
@@ -207,6 +208,14 @@ narbeh@narbeh-xps:~/ssl-checker$ ./ssl_checker.py -j -p -H  narbeh.org:443 test.
               'validity_days': 1104}}
 ```
 
+## New Relic Insights output
+
+Example only with the `-n/--newrelic` argument
+
+```
+$ python ssl_checker.py -H www.test.com -n
+[{"issued_to":"www.test.com", "cert_sans":"DNS:www.test.com; DNS:test.com", "valid_till":"2020-01-24", "valid_from":"2017-01-15", "cert_alg":"sha256WithRSAEncryption", "days_left":487, "cert_ver":2, "eventType":"SslCert", "issued_o":null, "cert_exp":false, "issuer_c":"US", "issuer_o":"Network Solutions L.L.C."}]
+```
 
 
 CSV export is also easy. After running the script with `-c/--csv` argument and specifying `filename.csv` after it, you'll have something like this:
