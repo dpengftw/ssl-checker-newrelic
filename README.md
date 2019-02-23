@@ -7,6 +7,8 @@ It's a simple script running in python that collects SSL information then it ret
 
 One of the good thing about this script, is that it will full analyze the SSL certificate for security issue's and will include the report in the output or CSV file.
 
+New Relic addition with the -n flag, which passes JSON data to Insights and provides ability to use NRQL.
+
 ## Requirements
 
 You only need to installl pyOpenSSL:
